@@ -6,6 +6,8 @@
     <title>ส่งภาพขึ้นจอ!</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
 
     <style>
         body { margin: 0; padding: 0; background-color: #121212; color: #ffffff; font-family: 'Prompt', sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding-bottom: 70px; background-image: radial-gradient(circle at top right, #1a2a3a 0%, #121212 50%); }
@@ -17,8 +19,7 @@
         .upload-icon { font-size: 40px; margin-bottom: 10px; color: #666; }
         .upload-text { font-size: 14px; color: #aaa; font-weight: 600; }
         
-        /* 🌟 บังคับพรีวิวเป็นวงกลม กลมดิ๊ก ดึงตรงกลางภาพ */
-        #imagePreview { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 200px; height: 200px; object-fit: cover; border-radius: 50%; display: none; z-index: 2; border: 3px solid #00bcd4; box-shadow: 0 5px 15px rgba(0,0,0,0.5); background-color: #111; }
+        #imagePreview { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 200px; height: 200px; object-fit: cover; border-radius: 50%; display: none; z-index: 2; border: 3px solid #00bcd4; box-shadow: 0 5px 15px rgba(0,0,0,0.5); background-color: #111; padding: 0 !important; }
         
         #removeImgBtn { position: absolute; top: 10px; right: 10px; background: rgba(244, 67, 54, 0.9); color: white; border: none; border-radius: 50%; width: 30px; height: 30px; font-size: 16px; font-weight: bold; cursor: pointer; display: none; z-index: 3; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
         .input-group { text-align: left; margin-bottom: 25px; }
@@ -38,6 +39,15 @@
         .reaction-btn:active { transform: scale(1.4); }
         .mini-react { position: fixed; bottom: 80px; font-size: 28px; z-index: 999; pointer-events: none; animation: floatUpPhone 1s ease-out forwards; }
         @keyframes floatUpPhone { 0% { transform: translateY(0) scale(0.5); opacity: 1; } 100% { transform: translateY(-150px) scale(1.5); opacity: 0; } }
+
+        /* หน้าจอตัดรูป */
+        #crop-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 99999; display: none; flex-direction: column; }
+        .crop-container { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #111; }
+        .crop-actions { height: 80px; background: #222; display: flex; align-items: center; justify-content: space-around; padding: 0 20px; box-shadow: 0 -2px 10px rgba(0,0,0,0.5); }
+        .cropper-view-box, .cropper-face { border-radius: 50%; }
+        .cropper-dashed, .cropper-point.point-se, .cropper-point.point-sw, .cropper-point.point-nw, .cropper-point.point-ne, .cropper-point.point-n, .cropper-point.point-e, .cropper-point.point-s, .cropper-point.point-w { display: none !important; }
+        .cropper-line { display: none !important; }
+        .cropper-modal { background: rgba(0, 0, 0, 0.85); }
     </style>
 </head>
 <body>
@@ -45,6 +55,17 @@
         <div style="font-size: 60px; margin-bottom: 20px;">🔒</div>
         <div style="font-size: 24px; font-weight: bold; color: #f44336; margin-bottom: 10px;">ขณะนี้ระบบปิดรับภาพแล้ว</div>
         <div style="font-size: 14px; color: #aaa;">ขอบคุณที่ร่วมสนุกกิจกรรมกับเราครับ!</div>
+    </div>
+
+    <div id="crop-overlay">
+        <div style="padding: 15px; text-align: center; background: #222; font-weight: bold; color: #fff; font-size: 14px;">เล็งให้อยู่ในกรอบวงกลม (ใช้นิ้วเลื่อน/ซูมได้เลย)</div>
+        <div class="crop-container">
+            <img id="image-to-crop" src="" style="max-width: 100%;">
+        </div>
+        <div class="crop-actions">
+            <button onclick="cancelCrop()" style="padding: 12px 20px; background: #555; color: white; border: none; border-radius: 8px; font-family: 'Prompt'; font-size: 14px; font-weight: bold;">❌ ยกเลิก</button>
+            <button onclick="confirmCrop()" style="padding: 12px 30px; background: #00bcd4; color: white; border: none; border-radius: 8px; font-family: 'Prompt'; font-weight: bold; font-size: 16px;">✅ ยืนยันรูปนี้</button>
+        </div>
     </div>
 
     <div class="container">
@@ -57,7 +78,7 @@
             <img id="imagePreview" src="">
             <button id="removeImgBtn" onclick="removeImage(event)">×</button>
         </div>
-        <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="previewFile(event)">
+        <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="openCropper(event)">
         
         <div class="input-group">
             <span class="input-label">ข้อความสั้นๆ (อธิบายรูปนี้)</span>
@@ -83,6 +104,9 @@
     <script>
         const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1V8OqpPp3PuMXDf6nhtLd3ED8NT3pb1-O8bMTS38IoHKK5MgrqPvPXa2MZFVl9XYu3A/exec";
 
+        let cropper = null;
+        let finalCroppedImage = ""; 
+
         async function checkSystemStatus() {
             try {
                 const response = await fetch(GOOGLE_SCRIPT_URL + "?action=check_status&t=" + Date.now());
@@ -97,16 +121,59 @@
             fetch(GOOGLE_SCRIPT_URL + "?action=reaction&type=" + type + "&t=" + Date.now(), { mode: 'no-cors' }).catch(e => console.log(e));
         }
 
-        function previewFile(event) {
+        function openCropper(event) {
             const file = event.target.files[0];
             if (!file) return;
+            
             const reader = new FileReader();
             reader.onload = function(e) {
-                document.getElementById('imagePreview').src = e.target.result;
-                document.getElementById('imagePreview').style.display = 'block';
-                document.getElementById('removeImgBtn').style.display = 'block';
+                const imageEl = document.getElementById('image-to-crop');
+                imageEl.src = e.target.result;
+                document.getElementById('crop-overlay').style.display = 'flex';
+                
+                if (cropper) { cropper.destroy(); }
+                
+                cropper = new Cropper(imageEl, {
+                    aspectRatio: 1, 
+                    viewMode: 1,    
+                    dragMode: 'move', 
+                    autoCropArea: 0.9, 
+                    guides: false, center: false, highlight: false,
+                    cropBoxMovable: false, cropBoxResizable: false, toggleDragModeOnDblclick: false
+                });
             }
             reader.readAsDataURL(file);
+        }
+
+        function cancelCrop() {
+            document.getElementById('crop-overlay').style.display = 'none';
+            document.getElementById('fileInput').value = '';
+            if (cropper) { cropper.destroy(); cropper = null; }
+        }
+
+        function confirmCrop() {
+            if (!cropper) return;
+            
+            const canvas = cropper.getCroppedCanvas({
+                width: 800,
+                height: 800,
+                imageSmoothingEnabled: true,
+                imageSmoothingQuality: 'high',
+            });
+            
+            const fileType = document.getElementById('fileInput').files[0].type;
+            if (fileType === 'image/png') {
+                finalCroppedImage = canvas.toDataURL('image/png');
+            } else {
+                finalCroppedImage = canvas.toDataURL('image/jpeg', 0.85);
+            }
+            
+            document.getElementById('crop-overlay').style.display = 'none';
+            document.getElementById('imagePreview').src = finalCroppedImage;
+            document.getElementById('imagePreview').style.display = 'block';
+            document.getElementById('removeImgBtn').style.display = 'block';
+            
+            cropper.destroy(); cropper = null;
         }
 
         function removeImage(event) {
@@ -115,52 +182,26 @@
             document.getElementById('imagePreview').src = '';
             document.getElementById('imagePreview').style.display = 'none';
             document.getElementById('removeImgBtn').style.display = 'none';
+            finalCroppedImage = ""; 
         }
 
         function updateCharCount() { document.getElementById('charCount').innerText = document.getElementById('messageInput').value.length + " / 40"; }
 
-        // 🌟 บีบอัดเป็นภาพเต็ม (ไม่ตัดขอบ) ไว้ส่งเข้า Drive
-        function compressImage(file) {
-            return new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    const img = new Image(); 
-                    img.onload = () => {
-                        const canvas = document.createElement('canvas'); 
-                        const MAX_SIZE = 1200; 
-                        let width = img.width; let height = img.height;
-                        if (width > height) { if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; } } 
-                        else { if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; } }
-                        canvas.width = width; canvas.height = height;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0, width, height);
-                        
-                        if (file.type === 'image/png') resolve(canvas.toDataURL('image/png')); 
-                        else resolve(canvas.toDataURL('image/jpeg', 0.85));
-                    };
-                    img.src = e.target.result;
-                };
-                reader.readAsDataURL(file);
-            });
-        }
-
         async function submitData() {
-            const fileInput = document.getElementById('fileInput');
             const message = document.getElementById('messageInput').value.trim();
             
-            if (!fileInput.files.length && message === "") return alert("กรุณาเลือกรูปภาพหรือพิมพ์ข้อความอย่างน้อย 1 อย่างครับ");
+            if (finalCroppedImage === "" && message === "") return alert("กรุณาเลือกรูปภาพหรือพิมพ์ข้อความอย่างน้อย 1 อย่างครับ");
             
-            const loader = document.getElementById('overlay-loading'); const loadingText = document.getElementById('loadingText');
+            const loader = document.getElementById('overlay-loading'); 
+            const loadingText = document.getElementById('loadingText');
             loader.style.display = 'flex'; document.querySelector('.spinner').style.display = 'block'; 
             loadingText.innerText = "กำลังส่งข้อมูล..."; loadingText.style.color = "#00bcd4";
 
             try {
-                let base64Image = "";
-                if (fileInput.files.length > 0) base64Image = await compressImage(fileInput.files[0]);
-
                 const res = await fetch(GOOGLE_SCRIPT_URL, { 
-                    method: 'POST', headers: { "Content-Type": "text/plain;charset=utf-8" }, 
-                    body: JSON.stringify({ image: base64Image, text: message }) 
+                    method: 'POST', 
+                    headers: { "Content-Type": "text/plain;charset=utf-8" }, 
+                    body: JSON.stringify({ image: finalCroppedImage, text: message }) 
                 });
                 const result = await res.json();
                 
@@ -170,7 +211,14 @@
                 }
 
                 document.querySelector('.spinner').style.display = 'none'; loadingText.innerText = "✅ ส่งขึ้นจอเรียบร้อย!"; loadingText.style.color = "#4CAF50";
-                setTimeout(() => { loader.style.display = 'none'; removeImage(new Event('click')); document.getElementById('messageInput').value = ''; updateCharCount(); }, 2000);
+                
+                setTimeout(() => { 
+                    loader.style.display = 'none'; 
+                    removeImage(new Event('click')); 
+                    document.getElementById('messageInput').value = ''; 
+                    updateCharCount(); 
+                }, 2000);
+                
             } catch (error) {
                 document.querySelector('.spinner').style.display = 'none'; loadingText.innerText = "❌ เกิดข้อผิดพลาด กรุณาลองใหม่"; loadingText.style.color = "#f44336"; setTimeout(() => { loader.style.display = 'none'; }, 2000);
             }
