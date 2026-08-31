@@ -37,7 +37,8 @@
 
         <div class="input-group">
             <span class="input-label">ความคิดเห็น</span>
-            <textarea id="commentInput" class="text-input" placeholder="พิมพ์ความคิดเห็นของคุณ..." maxlength="150"></textarea>
+            <!-- 🌟 ขยายให้พิมพ์ข้อความได้ยาวขึ้นเป็น 300 ตัวอักษร -->
+            <textarea id="commentInput" class="text-input" placeholder="พิมพ์ความคิดเห็นของคุณ..." maxlength="300"></textarea>
         </div>
         
         <button class="submit-btn" onclick="submitData()">🚀 ส่งข้อความ</button>
@@ -49,7 +50,7 @@
     </div>
 
     <script>
-        // 🌟 ใส่ URL ของคุณให้เรียบร้อยแล้ว
+        // 🌟 ใส่ URL ของคุณ
         const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1V8OqpPp3PuMXDf6nhtLd3ED8NT3pb1-O8bMTS38IoHKK5MgrqPvPXa2MZFVl9XYu3A/exec"; 
 
         async function submitData() {
@@ -66,7 +67,6 @@
             loadingText.style.color = "#00bcd4";
 
             try {
-                // ส่งข้อมูลเป็น JSON โดยระบุ type: "comment"
                 const res = await fetch(GOOGLE_SCRIPT_URL, { 
                     method: 'POST', 
                     headers: { "Content-Type": "text/plain;charset=utf-8" }, 
