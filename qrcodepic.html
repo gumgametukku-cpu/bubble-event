@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ส่งภาพขึ้นจอ!</title>
     
-    <!-- 🌟 โหลดฟอนต์ และระบบตัดรูป (Cropper.js) -->
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
@@ -19,7 +18,10 @@
         .upload-area:hover, .upload-area:active { border-color: #00bcd4; background-color: #2a2a2a; }
         .upload-icon { font-size: 40px; margin-bottom: 10px; color: #666; }
         .upload-text { font-size: 14px; color: #aaa; font-weight: 600; }
-        #imagePreview { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; display: none; z-index: 2; }
+        
+        /* 🌟 แก้ไข: บังคับให้พรีวิวบนมือถือเป็นวงกลมขนาด 200x200px เป๊ะๆ */
+        #imagePreview { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 200px; height: 200px; object-fit: cover; border-radius: 50%; display: none; z-index: 2; border: 3px solid #00bcd4; box-shadow: 0 5px 15px rgba(0,0,0,0.5); background-color: #111; }
+        
         #removeImgBtn { position: absolute; top: 10px; right: 10px; background: rgba(244, 67, 54, 0.9); color: white; border: none; border-radius: 50%; width: 30px; height: 30px; font-size: 16px; font-weight: bold; cursor: pointer; display: none; z-index: 3; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
         .input-group { text-align: left; margin-bottom: 25px; }
         .input-label { font-size: 13px; font-weight: 600; color: #aaa; margin-bottom: 8px; display: block; }
@@ -39,28 +41,22 @@
         .mini-react { position: fixed; bottom: 80px; font-size: 28px; z-index: 999; pointer-events: none; animation: floatUpPhone 1s ease-out forwards; }
         @keyframes floatUpPhone { 0% { transform: translateY(0) scale(0.5); opacity: 1; } 100% { transform: translateY(-150px) scale(1.5); opacity: 0; } }
 
-        /* 🌟 สไตล์สำหรับหน้าจอตัดรูป */
         #crop-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 99999; display: none; flex-direction: column; }
         .crop-container { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #111; }
         .crop-actions { height: 80px; background: #222; display: flex; align-items: center; justify-content: space-around; padding: 0 20px; box-shadow: 0 -2px 10px rgba(0,0,0,0.5); }
-        
-        /* 🌟 บังคับกรอบตัดรูปให้เป็นวงกลม */
         .cropper-view-box, .cropper-face { border-radius: 50%; }
-        /* ซ่อนเส้นขอบที่ไม่จำเป็นออกไปให้ดูคลีนๆ */
         .cropper-dashed, .cropper-point.point-se, .cropper-point.point-sw, .cropper-point.point-nw, .cropper-point.point-ne, .cropper-point.point-n, .cropper-point.point-e, .cropper-point.point-s, .cropper-point.point-w { display: none !important; }
         .cropper-line { display: none !important; }
         .cropper-modal { background: rgba(0, 0, 0, 0.85); }
     </style>
 </head>
 <body>
-    <!-- 🌟 หน้าจอเตือนระบบปิด -->
     <div id="system-closed-overlay">
         <div style="font-size: 60px; margin-bottom: 20px;">🔒</div>
         <div style="font-size: 24px; font-weight: bold; color: #f44336; margin-bottom: 10px;">ขณะนี้ระบบปิดรับภาพแล้ว</div>
         <div style="font-size: 14px; color: #aaa;">ขอบคุณที่ร่วมสนุกกิจกรรมกับเราครับ!</div>
     </div>
 
-    <!-- 🌟 หน้าจอสำหรับหมุน/เลื่อนตัดรูป (เด้งขึ้นมาตอนเลือกรูป) -->
     <div id="crop-overlay">
         <div style="padding: 15px; text-align: center; background: #222; font-weight: bold; color: #fff; font-size: 14px;">เล็งให้อยู่ในกรอบวงกลม (ใช้นิ้วเลื่อน/ซูมได้เลย)</div>
         <div class="crop-container">
@@ -79,8 +75,7 @@
         <div class="upload-area" onclick="document.getElementById('fileInput').click()" id="uploadBox">
             <div class="upload-icon">📸</div>
             <div class="upload-text">แตะเพื่อเลือกรูปภาพ</div>
-            <!-- จะแสดงรูปที่ตัดเป็นวงกลมแล้วตรงนี้ -->
-            <img id="imagePreview" src="" style="border-radius: 50%; padding: 10px; box-sizing: border-box;">
+            <img id="imagePreview" src="">
             <button id="removeImgBtn" onclick="removeImage(event)">×</button>
         </div>
         <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="openCropper(event)">
@@ -107,13 +102,11 @@
     </div>
 
     <script>
-        // 🌟 ลิงก์ Google Script เดิมของคุณ ไม่ต้องแก้
         const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1V8OqpPp3PuMXDf6nhtLd3ED8NT3pb1-O8bMTS38IoHKK5MgrqPvPXa2MZFVl9XYu3A/exec";
 
         let cropper = null;
-        let finalCroppedImage = ""; // ตัวแปรเก็บภาพที่หั่นเสร็จแล้วเตรียมส่ง
+        let finalCroppedImage = ""; 
 
-        // 🌟 ฟังก์ชันเช็คระบบปิดเปิด (เหมือนเดิม)
         async function checkSystemStatus() {
             try {
                 const response = await fetch(GOOGLE_SCRIPT_URL + "?action=check_status&t=" + Date.now());
@@ -128,31 +121,26 @@
             fetch(GOOGLE_SCRIPT_URL + "?action=reaction&type=" + type + "&t=" + Date.now(), { mode: 'no-cors' }).catch(e => console.log(e));
         }
 
-        // =====================================
-        // 🌟 ระบบตัดรูป (Cropper.js) 
-        // =====================================
         function openCropper(event) {
             const file = event.target.files[0];
             if (!file) return;
             
             const reader = new FileReader();
             reader.onload = function(e) {
-                // เอารูปมาใส่ในหน้าจอตัดรูป
                 const imageEl = document.getElementById('image-to-crop');
                 imageEl.src = e.target.result;
                 document.getElementById('crop-overlay').style.display = 'flex';
                 
                 if (cropper) { cropper.destroy(); }
                 
-                // เปิดโหมดหั่นรูป
                 cropper = new Cropper(imageEl, {
-                    aspectRatio: 1, // บังคับสัดส่วน 1:1 จัตุรัส
-                    viewMode: 1,    // ไม่ให้ผู้ใช้ลากออกนอกขอบสีดำ
-                    dragMode: 'move', // ให้ใช้นิ้วเลื่อนตัวรูปได้เลย
-                    autoCropArea: 0.9, // กรอบตัดกว้าง 90% ของหน้าจอ
+                    aspectRatio: 1, 
+                    viewMode: 1,    
+                    dragMode: 'move', 
+                    autoCropArea: 0.9, 
                     guides: false, center: false, highlight: false,
-                    cropBoxMovable: false, // ล็อกตำแหน่งกรอบไว้ตรงกลาง
-                    cropBoxResizable: false, // ล็อกขนาดกรอบ ห้ามยืดหด
+                    cropBoxMovable: false, 
+                    cropBoxResizable: false, 
                     toggleDragModeOnDblclick: false
                 });
             }
@@ -168,7 +156,6 @@
         function confirmCrop() {
             if (!cropper) return;
             
-            // สั่งดึงภาพเฉพาะส่วนที่อยู่ในกรอบวงกลมออกมา (ขนาดมาตรฐาน 800x800)
             const canvas = cropper.getCroppedCanvas({
                 width: 800,
                 height: 800,
@@ -176,7 +163,6 @@
                 imageSmoothingQuality: 'high',
             });
             
-            // เช็คว่าถ้าต้นฉบับเป็น PNG ให้คงความโปร่งใสไว้ (ถ้ามี) ถ้าไม่ใช่ให้บีบเป็น JPEG ให้ส่งไวๆ
             const fileType = document.getElementById('fileInput').files[0].type;
             if (fileType === 'image/png') {
                 finalCroppedImage = canvas.toDataURL('image/png');
@@ -184,7 +170,6 @@
                 finalCroppedImage = canvas.toDataURL('image/jpeg', 0.8);
             }
             
-            // ปิดหน้าจอตัดรูป และเอารูปไปโชว์ในช่องพรีวิว
             document.getElementById('crop-overlay').style.display = 'none';
             document.getElementById('imagePreview').src = finalCroppedImage;
             document.getElementById('imagePreview').style.display = 'block';
@@ -200,18 +185,14 @@
             document.getElementById('imagePreview').src = '';
             document.getElementById('imagePreview').style.display = 'none';
             document.getElementById('removeImgBtn').style.display = 'none';
-            finalCroppedImage = ""; // ล้างค่าทิ้ง
+            finalCroppedImage = ""; 
         }
 
         function updateCharCount() { document.getElementById('charCount').innerText = document.getElementById('messageInput').value.length + " / 40"; }
 
-        // =====================================
-        // 🌟 ระบบส่งข้อมูลขึ้นจอ 
-        // =====================================
         async function submitData() {
             const message = document.getElementById('messageInput').value.trim();
             
-            // ถ้าไม่เลือกรูปที่ตัดไว้ และ ไม่พิมพ์ข้อความ ให้แจ้งเตือน
             if (finalCroppedImage === "" && message === "") return alert("กรุณาเลือกรูปภาพหรือพิมพ์ข้อความอย่างน้อย 1 อย่างครับ");
             
             const loader = document.getElementById('overlay-loading'); 
@@ -222,7 +203,6 @@
             loadingText.style.color = "#00bcd4";
 
             try {
-                // ยิงรูปที่ตัดเสร็จแล้ว (finalCroppedImage) ขึ้นเน็ตได้เลย
                 const res = await fetch(GOOGLE_SCRIPT_URL, { 
                     method: 'POST', 
                     headers: { "Content-Type": "text/plain;charset=utf-8" }, 
@@ -237,7 +217,6 @@
 
                 document.querySelector('.spinner').style.display = 'none'; loadingText.innerText = "✅ ส่งขึ้นจอเรียบร้อย!"; loadingText.style.color = "#4CAF50";
                 
-                // ล้างค่าทั้งหมดเตรียมพร้อมรับคนต่อไป
                 setTimeout(() => { 
                     loader.style.display = 'none'; 
                     removeImage(new Event('click')); 
