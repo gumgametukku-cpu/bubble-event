@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ส่งภาพขึ้นจอ!</title>
-    
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
@@ -34,7 +33,7 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         #system-closed-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(18, 18, 18, 0.95); z-index: 10000; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; box-sizing: border-box; }
 
-        /* หน้าจอเล็งตัดรูป */
+        /* ระบบหน้าจอเล็งรูป Cropper */
         #crop-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 99999; display: none; flex-direction: column; }
         .crop-container { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #111; }
         .crop-actions { height: 80px; background: #222; display: flex; align-items: center; justify-content: space-around; padding: 0 20px; box-shadow: 0 -2px 10px rgba(0,0,0,0.5); }
@@ -51,7 +50,7 @@
         <div style="font-size: 14px; color: #aaa;">ขอบคุณที่ร่วมสนุกกิจกรรมกับเราครับ!</div>
     </div>
 
-    <!-- หน้าจอเล็งกรอบตัดรูป -->
+    <!-- กรอบให้คนดูซูมและเลื่อนรูป -->
     <div id="crop-overlay">
         <div style="padding: 15px; text-align: center; background: #222; font-weight: bold; color: #fff; font-size: 14px;">เล็งให้อยู่ในกรอบวงกลม (ใช้นิ้วเลื่อน/ซูมได้เลย)</div>
         <div class="crop-container">
@@ -91,7 +90,6 @@
 
     <script>
         const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1V8OqpPp3PuMXDf6nhtLd3ED8NT3pb1-O8bMTS38IoHKK5MgrqPvPXa2MZFVl9XYu3A/exec";
-
         let cropper = null;
         let finalCroppedImage = ""; 
 
@@ -118,7 +116,7 @@
                 
                 cropper = new Cropper(imageEl, {
                     aspectRatio: 1, 
-                    viewMode: 3, // 🌟 บังคับไม่ให้ซูมออกจนเห็นขอบดำเด็ดขาด!
+                    viewMode: 1,    
                     dragMode: 'move', 
                     autoCropArea: 0.9, 
                     guides: false, center: false, highlight: false,
@@ -138,13 +136,19 @@
             if (!cropper) return;
             
             const canvas = cropper.getCroppedCanvas({
-                width: 1000, // ส่งรูปแบบความละเอียดสูงเข้า Drive
-                height: 1000,
+                width: 800,
+                height: 800,
                 imageSmoothingEnabled: true,
                 imageSmoothingQuality: 'high',
+                fillColor: '#000'
             });
             
-            finalCroppedImage = canvas.toDataURL('image/jpeg', 0.85);
+            const fileType = document.getElementById('fileInput').files[0].type;
+            if (fileType === 'image/png') {
+                finalCroppedImage = canvas.toDataURL('image/png');
+            } else {
+                finalCroppedImage = canvas.toDataURL('image/jpeg', 0.85);
+            }
             
             document.getElementById('crop-overlay').style.display = 'none';
             document.getElementById('imagePreview').src = finalCroppedImage;
@@ -167,7 +171,6 @@
 
         async function submitData() {
             const message = document.getElementById('messageInput').value.trim();
-            
             if (finalCroppedImage === "" && message === "") return alert("กรุณาเลือกรูปภาพหรือพิมพ์ข้อความอย่างน้อย 1 อย่างครับ");
             
             const loader = document.getElementById('overlay-loading'); 
@@ -196,7 +199,6 @@
                     document.getElementById('messageInput').value = ''; 
                     updateCharCount(); 
                 }, 2000);
-                
             } catch (error) {
                 document.querySelector('.spinner').style.display = 'none'; loadingText.innerText = "❌ เกิดข้อผิดพลาด กรุณาลองใหม่"; loadingText.style.color = "#f44336"; setTimeout(() => { loader.style.display = 'none'; }, 2000);
             }
