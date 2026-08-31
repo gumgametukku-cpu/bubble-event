@@ -14,7 +14,7 @@
         .upload-area:hover, .upload-area:active { border-color: #00bcd4; background-color: #2a2a2a; }
         .upload-icon { font-size: 40px; margin-bottom: 10px; color: #666; }
         .upload-text { font-size: 14px; color: #aaa; font-weight: 600; }
-        #imagePreview { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; display: none; z-index: 2; }
+        #imagePreview { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; display: none; z-index: 2; }
         #removeImgBtn { position: absolute; top: 10px; right: 10px; background: rgba(244, 67, 54, 0.9); color: white; border: none; border-radius: 50%; width: 30px; height: 30px; font-size: 16px; font-weight: bold; cursor: pointer; display: none; z-index: 3; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
         .input-group { text-align: left; margin-bottom: 25px; }
         .input-label { font-size: 13px; font-weight: 600; color: #aaa; margin-bottom: 8px; display: block; }
@@ -56,7 +56,6 @@
     </div>
 
     <script>
-        // 🌟 ใส่ URL ที่คุณสร้างมา
         const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1V8OqpPp3PuMXDf6nhtLd3ED8NT3pb1-O8bMTS38IoHKK5MgrqPvPXa2MZFVl9XYu3A/exec";
 
         function previewFile(event) {
@@ -83,7 +82,7 @@
             document.getElementById('charCount').innerText = document.getElementById('messageInput').value.length + " / 40";
         }
 
-        // ฟังก์ชันบีบอัดภาพก่อนส่ง เพื่อไม่ให้เกินลิมิต Google และส่งไวขึ้น
+        // 🌟 แก้ไข: เพิ่มการเช็คไฟล์ หากเป็น PNG ให้คงความโปร่งใสไว้
         function compressImage(file) {
             return new Promise((resolve) => {
                 const reader = new FileReader();
@@ -91,14 +90,21 @@
                     const img = new Image();
                     img.onload = () => {
                         const canvas = document.createElement('canvas');
-                        const MAX_SIZE = 800; // บีบความละเอียดลงเหลือ 800px 
+                        const MAX_SIZE = 800; 
                         let width = img.width; let height = img.height;
                         if (width > height) { if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; } } 
                         else { if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; } }
                         canvas.width = width; canvas.height = height;
                         const ctx = canvas.getContext('2d');
                         ctx.drawImage(img, 0, 0, width, height);
-                        resolve(canvas.toDataURL('image/jpeg', 0.8)); // ใช้ JPEG คุณภาพ 80% ให้เบาที่สุด
+                        
+                        // ถ้ารูปที่ส่งมาเป็น PNG ให้เก็บพื้นหลังใสไว้
+                        if (file.type === 'image/png') {
+                            resolve(canvas.toDataURL('image/png'));
+                        } else {
+                            // ถ้ารูปถ่ายปกติ ให้ใช้ JPEG บีบอัดลดขนาดให้ส่งเร็วขึ้น
+                            resolve(canvas.toDataURL('image/jpeg', 0.8));
+                        }
                     };
                     img.src = e.target.result;
                 };
@@ -128,12 +134,10 @@
                     base64Image = await compressImage(fileInput.files[0]);
                 }
 
-                // เตรียมข้อมูลยิงเข้า Google
                 const payload = JSON.stringify({ image: base64Image, text: message });
 
                 await fetch(GOOGLE_SCRIPT_URL, {
                     method: 'POST',
-                    // ใช้ text/plain เพื่อหลบข้อจำกัดเรื่อง CORS ของ Google (สูตรลับ!)
                     headers: { "Content-Type": "text/plain;charset=utf-8" },
                     body: payload
                 });
