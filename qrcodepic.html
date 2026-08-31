@@ -19,7 +19,7 @@
         .upload-icon { font-size: 40px; margin-bottom: 10px; color: #666; }
         .upload-text { font-size: 14px; color: #aaa; font-weight: 600; }
         
-        #imagePreview { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 200px; height: 200px; object-fit: cover; border-radius: 50%; display: none; z-index: 2; border: 3px solid #00bcd4; box-shadow: 0 5px 15px rgba(0,0,0,0.5); background-color: #ffffff; padding: 0 !important; }
+        #imagePreview { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 200px; height: 200px; object-fit: cover; border-radius: 50%; display: none; z-index: 2; border: 3px solid #00bcd4; box-shadow: 0 5px 15px rgba(0,0,0,0.5); background-color: transparent; padding: 0 !important; }
         
         #removeImgBtn { position: absolute; top: 10px; right: 10px; background: rgba(244, 67, 54, 0.9); color: white; border: none; border-radius: 50%; width: 30px; height: 30px; font-size: 16px; font-weight: bold; cursor: pointer; display: none; z-index: 3; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
         .input-group { text-align: left; margin-bottom: 25px; }
@@ -138,11 +138,10 @@
         function confirmCrop() {
             if (!cropper) return;
             
-            // 🌟 เพิ่มคำสั่ง fillColor: '#ffffff' เพื่อเทสีขาวรองพื้นให้ภาพ PNG กันภาพดำ
+            // 🌟 ไม่ใส่ fillColor: '#ffffff' แล้ว เพื่อคงความใสของ PNG ไว้
             const canvas = cropper.getCroppedCanvas({
                 width: 800,
                 height: 800,
-                fillColor: '#ffffff',
                 imageSmoothingEnabled: true,
                 imageSmoothingQuality: 'high'
             });
