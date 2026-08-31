@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ส่งภาพขึ้นจอ!</title>
+    
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
@@ -28,12 +29,14 @@
         .text-limit { font-size: 11px; color: #666; text-align: right; margin-top: 5px; }
         .submit-btn { width: 100%; padding: 16px; border: none; border-radius: 12px; background: linear-gradient(135deg, #00bcd4, #2196F3); color: white; font-size: 18px; font-weight: 700; cursor: pointer; box-shadow: 0 5px 15px rgba(0, 188, 212, 0.4); transition: 0.2s; font-family: 'Prompt', sans-serif; }
         .submit-btn:active { transform: scale(0.96); }
+        
         #overlay-loading { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 999999; display: none; flex-direction: column; align-items: center; justify-content: center; }
         .spinner { width: 50px; height: 50px; border: 5px solid #333; border-top: 5px solid #00bcd4; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
         #system-closed-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(18, 18, 18, 0.95); z-index: 10000; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; box-sizing: border-box; }
 
-        /* ระบบหน้าจอเล็งรูป Cropper */
+        /* หน้าจอเล็งรูป */
         #crop-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 99999; display: none; flex-direction: column; }
         .crop-container { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #111; }
         .crop-actions { height: 80px; background: #222; display: flex; align-items: center; justify-content: space-around; padding: 0 20px; box-shadow: 0 -2px 10px rgba(0,0,0,0.5); }
@@ -116,7 +119,7 @@
                 
                 cropper = new Cropper(imageEl, {
                     aspectRatio: 1, 
-                    viewMode: 1,    
+                    viewMode: 1, 
                     dragMode: 'move', 
                     autoCropArea: 0.9, 
                     guides: false, center: false, highlight: false,
@@ -135,20 +138,15 @@
         function confirmCrop() {
             if (!cropper) return;
             
+            // ตัดภาพเป็นสี่เหลี่ยมจัตุรัสตามที่คนดูเล็งไว้เป๊ะๆ
             const canvas = cropper.getCroppedCanvas({
                 width: 800,
                 height: 800,
                 imageSmoothingEnabled: true,
-                imageSmoothingQuality: 'high',
-                fillColor: '#000'
+                imageSmoothingQuality: 'high'
             });
             
-            const fileType = document.getElementById('fileInput').files[0].type;
-            if (fileType === 'image/png') {
-                finalCroppedImage = canvas.toDataURL('image/png');
-            } else {
-                finalCroppedImage = canvas.toDataURL('image/jpeg', 0.85);
-            }
+            finalCroppedImage = canvas.toDataURL('image/jpeg', 0.85);
             
             document.getElementById('crop-overlay').style.display = 'none';
             document.getElementById('imagePreview').src = finalCroppedImage;
