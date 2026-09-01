@@ -24,13 +24,11 @@
         .spinner { width: 50px; height: 50px; border: 5px solid #333; border-top: 5px solid #00bcd4; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
-        /* 🌟 หน้าจอแบล็กเอาต์เมื่อระบบปิด */
         #system-closed-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(18, 18, 18, 0.98); z-index: 100000; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; box-sizing: border-box; }
     </style>
 </head>
 <body>
 
-    <!-- 🌟 แจ้งเตือนปิดระบบ -->
     <div id="system-closed-overlay">
         <div style="font-size: 60px; margin-bottom: 20px;">🔒</div>
         <div style="font-size: 24px; font-weight: bold; color: #f44336; margin-bottom: 10px;">ขณะนี้ปิดรับความคิดเห็นแล้ว</div>
@@ -60,19 +58,17 @@
     </div>
 
     <script>
-        // 🌟 ใส่ URL ของคุณ
         const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1V8OqpPp3PuMXDf6nhtLd3ED8NT3pb1-O8bMTS38IoHKK5MgrqPvPXa2MZFVl9XYu3A/exec"; 
 
-        // 🌟 ฟังก์ชันเช็คสถานะระบบว่าเปิดหรือปิด
         async function checkSystemStatus() {
             try {
-                const response = await fetch(GOOGLE_SCRIPT_URL + "?action=check_status&t=" + Date.now());
+                // 🌟 เพิ่มคำสั่ง &system_type=comment เพื่อให้เช็คถูกระบบ
+                const response = await fetch(GOOGLE_SCRIPT_URL + "?action=check_status&system_type=comment&t=" + Date.now());
                 const data = await response.json();
                 document.getElementById('system-closed-overlay').style.display = data.isOpen ? 'none' : 'flex';
             } catch (error) {}
         }
         
-        // เช็คตอนโหลดหน้า และเช็คซ้ำทุกๆ 5 วินาที
         checkSystemStatus(); 
         setInterval(checkSystemStatus, 5000);
 
@@ -98,7 +94,6 @@
                 
                 const result = await res.json();
                 
-                // 🌟 ตรวจสอบว่าระหว่างกดส่ง แอดมินปิดระบบไปหรือยัง
                 if (result.message === "CLOSED") {
                     document.querySelector('.spinner').style.display = 'none'; 
                     loadingText.innerText = "❌ หมดเวลาร่วมกิจกรรมแล้วครับ"; 
