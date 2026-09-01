@@ -95,7 +95,7 @@
         const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1V8OqpPp3PuMXDf6nhtLd3ED8NT3pb1-O8bMTS38IoHKK5MgrqPvPXa2MZFVl9XYu3A/exec";
         let cropper = null;
         let finalCroppedImage = ""; 
-        let originalFullImage = ""; // 🌟 เพิ่มตัวแปรสำหรับเก็บรูปเต็ม
+        let originalFullImage = ""; 
 
         async function checkSystemStatus() {
             try {
@@ -110,13 +110,13 @@
             const file = event.target.files[0];
             if (!file) return;
             
-            // 🌟 1. ย่อและเก็บรูปเต็มต้นฉบับ (ไม่ครอป) เพื่อส่งเข้า Google Drive
+            // 🌟 ย่อรูปต้นฉบับเล็กน้อยเพื่อความเสถียรในการอัปโหลด
             const readerFull = new FileReader();
             readerFull.onload = function(e) {
                 const img = new Image();
                 img.onload = function() {
                     const canvas = document.createElement('canvas');
-                    const MAX_DIM = 1920; // จำกัดขนาดไม่ให้ใหญ่เกินไปจนส่งไม่ผ่าน
+                    const MAX_DIM = 1280; 
                     let width = img.width;
                     let height = img.height;
                     if (width > height && width > MAX_DIM) {
@@ -130,13 +130,12 @@
                     canvas.height = height;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, width, height);
-                    originalFullImage = canvas.toDataURL('image/jpeg', 0.85); // เซฟรูปเต็มเป็น JPEG
+                    originalFullImage = canvas.toDataURL('image/jpeg', 0.85); 
                 }
                 img.src = e.target.result;
             };
             readerFull.readAsDataURL(file);
             
-            // 🌟 2. เข้าสู่ระบบครอปรูปวงกลมตามปกติ
             const reader = new FileReader();
             reader.onload = function(e) {
                 const imageEl = document.getElementById('image-to-crop');
@@ -160,16 +159,17 @@
         function cancelCrop() {
             document.getElementById('crop-overlay').style.display = 'none';
             document.getElementById('fileInput').value = '';
-            originalFullImage = ""; // ล้างค่ารูปเต็มทิ้ง
+            originalFullImage = ""; 
             if (cropper) { cropper.destroy(); cropper = null; }
         }
 
         function confirmCrop() {
             if (!cropper) return;
             
+            // 🌟 ปรับขนาดรูปวงกลมลงมาที่ 300x300 px เพื่อกัน Google Sheet โหลดค้าง
             const canvas = cropper.getCroppedCanvas({
-                width: 800,
-                height: 800,
+                width: 300,
+                height: 300,
                 imageSmoothingEnabled: true,
                 imageSmoothingQuality: 'high'
             });
@@ -211,13 +211,12 @@
             loadingText.innerText = "กำลังส่งข้อมูล..."; loadingText.style.color = "#00bcd4";
 
             try {
-                // 🌟 ส่งข้อมูลไปทั้งรูปครอป (image) และรูปเต็ม (fullImage)
                 const res = await fetch(GOOGLE_SCRIPT_URL, { 
                     method: 'POST', 
                     headers: { "Content-Type": "text/plain;charset=utf-8" }, 
                     body: JSON.stringify({ 
                         image: finalCroppedImage, 
-                        fullImage: originalFullImage, // ส่งคีย์ fullImage เพิ่มเข้าไป
+                        fullImage: originalFullImage, 
                         text: message 
                     }) 
                 });
