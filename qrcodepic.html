@@ -110,7 +110,7 @@
             const file = event.target.files[0];
             if (!file) return;
             
-            // ย่อรูปต้นฉบับเล็กน้อยเพื่อความเสถียร
+            // 🌟 ย่อรูปต้นฉบับเล็กน้อยเพื่อความเสถียรในการอัปโหลด
             const readerFull = new FileReader();
             readerFull.onload = function(e) {
                 const img = new Image();
@@ -166,16 +166,20 @@
         function confirmCrop() {
             if (!cropper) return;
             
-            // 🌟 แก้ไข: บีบขนาดความกว้าง/สูงลงมาที่ 180px เพื่อการันตีไม่ให้ข้อมูลทะลุ 50,000 ตัวอักษร
+            // 🌟 ปรับขนาดรูปวงกลมลงมาที่ 300x300 px เพื่อกัน Google Sheet โหลดค้าง
             const canvas = cropper.getCroppedCanvas({
-                width: 180,
-                height: 180,
+                width: 300,
+                height: 300,
                 imageSmoothingEnabled: true,
-                imageSmoothingQuality: 'medium'
+                imageSmoothingQuality: 'high'
             });
             
-            // บังคับให้เป็น PNG เสมอ เพื่อให้ฟองสบู่ไม่มีพื้นหลังขอบดำ
-            finalCroppedImage = canvas.toDataURL('image/png');
+            const fileType = document.getElementById('fileInput').files[0].type;
+            if (fileType === 'image/png') {
+                finalCroppedImage = canvas.toDataURL('image/png');
+            } else {
+                finalCroppedImage = canvas.toDataURL('image/jpeg', 0.85);
+            }
             
             document.getElementById('crop-overlay').style.display = 'none';
             document.getElementById('imagePreview').src = finalCroppedImage;
