@@ -214,7 +214,7 @@
 
         function updateCharCount() { document.getElementById('charCount').innerText = document.getElementById('messageInput').value.length + " / 40"; }
 
-        const UPLOAD_TIMEOUT_MS = 25000;
+        const UPLOAD_TIMEOUT_MS = 32000;
         const MAX_RETRIES = 2; // ลองใหม่สูงสุด 2 ครั้งหลังครั้งแรก (รวม 3 ครั้ง)
 
         async function postWithTimeout(payload, timeoutMs) {
@@ -268,10 +268,11 @@
             let attempt = 0;
             let success = false;
             let finalErrorMsg = "";
-            const startTime = Date.now();
+            const totalStartTime = Date.now();
 
             while (attempt <= MAX_RETRIES && !success) {
                 attempt++;
+                const attemptStartTime = Date.now();
                 if (attempt === 1) {
                     loadingText.innerText = "กำลังส่งข้อมูล...";
                 } else {
@@ -280,9 +281,18 @@
 
                 try {
                     const res = await postWithTimeout(payload, UPLOAD_TIMEOUT_MS);
-                    const result = await res.json();
-                    const duration = Date.now() - startTime;
-                    console.log(`[Bubble Client] Response received on attempt ${attempt} in ${duration}ms:`, result);
+                    const resText = await res.text();
+                    let result;
+                    try {
+                        result = JSON.parse(resText);
+                    } catch (parseErr) {
+                        console.error(`[Bubble Client] Non-JSON response on attempt ${attempt}:`, resText);
+                        throw new Error("Invalid server response format: " + resText.slice(0, 100));
+                    }
+
+                    const duration = Date.now() - totalStartTime;
+                    const attemptDuration = Date.now() - attemptStartTime;
+                    console.log(`[Bubble Client] Response received on attempt ${attempt} in ${attemptDuration}ms (total: ${duration}ms):`, result);
 
                     if (result && result.message === "CLOSED") {
                         // ปิดระบบ: ไม่ต้อง Retry
@@ -301,6 +311,7 @@
 
                     if (result && result.message === "SUCCESS") {
                         success = true;
+                        console.log(`[Bubble Client] Submission succeeded on attempt ${attempt} (status: ${result.status || 'new'}, subId: ${result.subId || submissionId})`);
                         spinner.style.display = 'none';
                         loadingText.innerText = "✅ ส่งขึ้นจอเรียบร้อย!";
                         loadingText.style.color = "#4CAF50";
@@ -322,7 +333,8 @@
                         break;
                     }
                 } catch (err) {
-                    console.warn(`[Bubble Client] Attempt ${attempt} failed:`, err);
+                    const attemptDuration = Date.now() - attemptStartTime;
+                    console.warn(`[Bubble Client] Attempt ${attempt} failed after ${attemptDuration}ms:`, err);
                     const isTimeout = err.name === 'AbortError';
                     if (isTimeout) {
                         finalErrorMsg = "❌ การส่งใช้เวลานานเกินไป กรุณากดลองส่งอีกครั้ง";
@@ -332,7 +344,7 @@
 
                     // หากยังไม่ครบโควตา Retry ให้หน่วงเวลาเล็กน้อยแล้วลองใหม่
                     if (attempt <= MAX_RETRIES) {
-                        await new Promise(r => setTimeout(r, 1000));
+                        await new Promise(r => setTimeout(r, 1500));
                     }
                 }
             }
