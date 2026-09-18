@@ -214,7 +214,7 @@
 
         function updateCharCount() { document.getElementById('charCount').innerText = document.getElementById('messageInput').value.length + " / 40"; }
 
-        const UPLOAD_TIMEOUT_MS = 20000;
+        const UPLOAD_TIMEOUT_MS = 25000;
         const MAX_RETRIES = 2; // ลองใหม่สูงสุด 2 ครั้งหลังครั้งแรก (รวม 3 ครั้ง)
 
         async function postWithTimeout(payload, timeoutMs) {
@@ -253,13 +253,17 @@
             spinner.style.display = 'block'; 
             loadingText.style.color = "#00bcd4";
 
+            // 🌟 สร้าง submissionId หนึ่งครั้งต่อการกดส่ง และใช้ ID เดิมนี้ตลอดการ Retry ทุกรอบ (Idempotent Submission)
+            const submissionId = "sub_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+
             const payload = {
+                submissionId: submissionId,
                 image: finalCroppedImage,
                 fullImage: originalFullImage,
                 text: message
             };
 
-            console.log(`[Bubble Client] Submitting data. Crop length: ${finalCroppedImage.length}, Full length: ${originalFullImage ? originalFullImage.length : 0}`);
+            console.log(`[Bubble Client] Submitting data. SubmissionId: ${submissionId}, Crop length: ${finalCroppedImage.length}, Full length: ${originalFullImage ? originalFullImage.length : 0}`);
 
             let attempt = 0;
             let success = false;
