@@ -174,25 +174,68 @@
                 imageSmoothingQuality: 'high'
             });
             
-            // 🌟 สร้าง Canvas ใหม่เพื่อรองพื้นสีขาว ป้องกัน PNG โปร่งใสกลายเป็นสีดำเมื่อแปลงเป็น JPEG
-            const exportCanvas = document.createElement('canvas');
-            exportCanvas.width = 300;
-            exportCanvas.height = 300;
-            const ctx = exportCanvas.getContext('2d');
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, 300, 300);
-            ctx.drawImage(canvas, 0, 0, 300, 300);
-            
-            // 🌟 บังคับเข้ารหัสเป็น JPEG เสมอ (คุณภาพ 0.80) เพื่อคุมขนาด Base64 ให้ไม่เกินขีดจำกัด 50,000 ตัวอักษรของ Google Sheets
-            let quality = 0.80;
-            finalCroppedImage = exportCanvas.toDataURL('image/jpeg', quality);
-            
-            // ตรวจสอบความปลอดภัยของขนาด Base64 หากเกิน 45,000 chars ให้บีบอัดเพิ่ม
-            if (finalCroppedImage.length > 45000) {
-                finalCroppedImage = exportCanvas.toDataURL('image/jpeg', 0.65);
+            // 🌟 ตรวจสอบว่ารูปมี Alpha Channel (ความโปร่งใส) หรือไม่
+            let hasAlpha = false;
+            try {
+                const ctx = canvas.getContext('2d');
+                const imgData = ctx.getImageData(0, 0, 300, 300).data;
+                // ตรวจสอบค่า Alpha (ไบต์ที่ 4 ของแต่ละพิกเซล)
+                for (let i = 3; i < imgData.length; i += 4) {
+                    if (imgData[i] < 250) {
+                        hasAlpha = true;
+                        break;
+                    }
+                }
+            } catch (e) {
+                console.warn("[Bubble Client] Alpha detection warning:", e);
             }
-            
-            console.log(`[Bubble Client] Crop image encoded as JPEG (size: ${finalCroppedImage.length} chars, ~${Math.round(finalCroppedImage.length * 0.75 / 1024)} KB)`);
+
+            if (hasAlpha) {
+                // 🌟 กรณีเป็น PNG โปร่งใส / สติกเกอร์ / โลโก้:
+                // คงความโปร่งใสไว้ ไม่ปูพื้นสีขาวเด็ดขาด!
+                // ใช้ image/webp คุณภาพ 0.80 เพื่อรักษา Alpha และคุมขนาด Base64 ให้อยู่ในระดับ ~10-18 KB (ปลอดภัยต่อ Sheet cell limit 50,000 ตัวอักษร)
+                let webpData = canvas.toDataURL('image/webp', 0.80);
+                
+                // ตรวจสอบว่าเบราว์เซอร์รองรับ image/webp หรือไม่ (HTML5 Spec: ถ้าไม่รองรับ toDataURL จะคืนค่า data:image/png)
+                if (webpData.startsWith('data:image/webp')) {
+                    if (webpData.length > 45000) {
+                        webpData = canvas.toDataURL('image/webp', 0.65);
+                    }
+                    finalCroppedImage = webpData;
+                    console.log(`[Bubble Client] Transparent crop encoded as WebP with alpha (size: ${finalCroppedImage.length} chars, ~${Math.round(finalCroppedImage.length * 0.75 / 1024)} KB)`);
+                } else {
+                    // หากเบราว์เซอร์ไม่รองรับ WebP ให้ใช้ image/png
+                    let pngData = canvas.toDataURL('image/png');
+                    if (pngData.length > 45000) {
+                        // หาก PNG ละเอียดมากจนเกินเพดาน 45,000 ตัวอักษร ให้ปรับลดขนาด Canvas ลงเหลือ 240x240 เพื่อความปลอดภัยสูงสุด
+                        const scaledCanvas = document.createElement('canvas');
+                        scaledCanvas.width = 240;
+                        scaledCanvas.height = 240;
+                        const scaledCtx = scaledCanvas.getContext('2d');
+                        scaledCtx.drawImage(canvas, 0, 0, 240, 240);
+                        pngData = scaledCanvas.toDataURL('image/png');
+                    }
+                    finalCroppedImage = pngData;
+                    console.log(`[Bubble Client] Transparent crop encoded as PNG fallback (size: ${finalCroppedImage.length} chars, ~${Math.round(finalCroppedImage.length * 0.75 / 1024)} KB)`);
+                }
+            } else {
+                // 🌟 กรณีเป็นภาพถ่ายปกติ (ไม่มีความโปร่งใส):
+                // ปูพื้นขาวและเข้ารหัสเป็น JPEG คุณภาพ 0.80 เพื่อคงพฤติกรรมเดิมและขนาดที่กะทัดรัด
+                const exportCanvas = document.createElement('canvas');
+                exportCanvas.width = 300;
+                exportCanvas.height = 300;
+                const ctx = exportCanvas.getContext('2d');
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, 300, 300);
+                ctx.drawImage(canvas, 0, 0, 300, 300);
+                
+                let quality = 0.80;
+                finalCroppedImage = exportCanvas.toDataURL('image/jpeg', quality);
+                if (finalCroppedImage.length > 45000) {
+                    finalCroppedImage = exportCanvas.toDataURL('image/jpeg', 0.65);
+                }
+                console.log(`[Bubble Client] Photo crop encoded as JPEG (size: ${finalCroppedImage.length} chars, ~${Math.round(finalCroppedImage.length * 0.75 / 1024)} KB)`);
+            }
             
             document.getElementById('crop-overlay').style.display = 'none';
             document.getElementById('imagePreview').src = finalCroppedImage;
@@ -388,6 +431,7 @@
 
                 } else if (mode === "STATUS_POLL") {
                     // 🌟 โหมดเช็คสถานะน้ำหนักเบา (~50 bytes) ไม่ส่งรูปภาพซ้ำเด็ดขาด!
+                    loadingText.innerText = "กำลังตรวจสอบสถานะการส่ง...";
                     try {
                         const res = await postWithTimeout(statusPayload, STATUS_TIMEOUT_MS);
                         const result = await res.json();
@@ -431,6 +475,7 @@
                             finalErrorMsg = "❌ การเชื่อมต่อขัดข้อง กรุณาลองใหม่อีกครั้ง";
                             break;
                         }
+                        loadingText.innerText = "กำลังตรวจสอบสถานะการส่ง... (กำลังลองใหม่)";
                         // รอ 2 วินาทีแล้วลองเช็คสถานะใหม่ (ยังคงไม่ส่งรูปภาพซ้ำ)
                         await new Promise(r => setTimeout(r, 2000));
                         continue;
