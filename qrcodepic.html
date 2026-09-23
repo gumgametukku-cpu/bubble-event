@@ -166,7 +166,7 @@
         function confirmCrop() {
             if (!cropper) return;
             
-            // 🌟 ปรับขนาดรูปวงกลมลงมาที่ 300x300 px เพื่อกัน Google Sheet โหลดค้าง
+            // 🌟 ปรับขนาดรูปวงกลมลงมาที่ 300x300 px
             const canvas = cropper.getCroppedCanvas({
                 width: 300,
                 height: 300,
@@ -174,12 +174,25 @@
                 imageSmoothingQuality: 'high'
             });
             
-            const fileType = document.getElementById('fileInput').files[0].type;
-            if (fileType === 'image/png') {
-                finalCroppedImage = canvas.toDataURL('image/png');
-            } else {
-                finalCroppedImage = canvas.toDataURL('image/jpeg', 0.85);
+            // 🌟 สร้าง Canvas ใหม่เพื่อรองพื้นสีขาว ป้องกัน PNG โปร่งใสกลายเป็นสีดำเมื่อแปลงเป็น JPEG
+            const exportCanvas = document.createElement('canvas');
+            exportCanvas.width = 300;
+            exportCanvas.height = 300;
+            const ctx = exportCanvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, 300, 300);
+            ctx.drawImage(canvas, 0, 0, 300, 300);
+            
+            // 🌟 บังคับเข้ารหัสเป็น JPEG เสมอ (คุณภาพ 0.80) เพื่อคุมขนาด Base64 ให้ไม่เกินขีดจำกัด 50,000 ตัวอักษรของ Google Sheets
+            let quality = 0.80;
+            finalCroppedImage = exportCanvas.toDataURL('image/jpeg', quality);
+            
+            // ตรวจสอบความปลอดภัยของขนาด Base64 หากเกิน 45,000 chars ให้บีบอัดเพิ่ม
+            if (finalCroppedImage.length > 45000) {
+                finalCroppedImage = exportCanvas.toDataURL('image/jpeg', 0.65);
             }
+            
+            console.log(`[Bubble Client] Crop image encoded as JPEG (size: ${finalCroppedImage.length} chars, ~${Math.round(finalCroppedImage.length * 0.75 / 1024)} KB)`);
             
             document.getElementById('crop-overlay').style.display = 'none';
             document.getElementById('imagePreview').src = finalCroppedImage;
@@ -201,43 +214,241 @@
 
         function updateCharCount() { document.getElementById('charCount').innerText = document.getElementById('messageInput').value.length + " / 40"; }
 
+        const UPLOAD_TIMEOUT_MS = 25000;
+        const STATUS_TIMEOUT_MS = 10000;
+        const MAX_NETWORK_RETRIES = 3; 
+        const MAX_BUSY_RETRIES = 3; 
+        const MAX_TOTAL_TIME_MS = 125000; // 125 วินาที (ครอบคลุม Lease 90s + โควตากู้คืน 25s + buffer)
+
+        async function postWithTimeout(payload, timeoutMs) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                const res = await fetch(GOOGLE_SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { "Content-Type": "text/plain;charset=utf-8" },
+                    body: JSON.stringify(payload),
+                    signal: controller.signal
+                });
+                clearTimeout(timer);
+                return res;
+            } catch (err) {
+                clearTimeout(timer);
+                throw err;
+            }
+        }
+
         async function submitData() {
             const message = document.getElementById('messageInput').value.trim();
             if (finalCroppedImage === "" && message === "") return alert("กรุณาเลือกรูปภาพหรือพิมพ์ข้อความอย่างน้อย 1 อย่างครับ");
             
+            const sendBtn = document.getElementById('sendBtn');
+            if (sendBtn.disabled) return; // ป้องกันการกดซ้ำ
+            sendBtn.disabled = true;
+            sendBtn.style.opacity = '0.6';
+            sendBtn.style.cursor = 'not-allowed';
+
             const loader = document.getElementById('overlay-loading'); 
             const loadingText = document.getElementById('loadingText');
-            loader.style.display = 'flex'; document.querySelector('.spinner').style.display = 'block'; 
-            loadingText.innerText = "กำลังส่งข้อมูล..."; loadingText.style.color = "#00bcd4";
+            const spinner = document.querySelector('.spinner');
 
-            try {
-                const res = await fetch(GOOGLE_SCRIPT_URL, { 
-                    method: 'POST', 
-                    headers: { "Content-Type": "text/plain;charset=utf-8" }, 
-                    body: JSON.stringify({ 
-                        image: finalCroppedImage, 
-                        fullImage: originalFullImage, 
-                        text: message 
-                    }) 
-                });
-                const result = await res.json();
-                
-                if (result.message === "CLOSED") {
-                    document.querySelector('.spinner').style.display = 'none'; loadingText.innerText = "❌ หมดเวลาร่วมกิจกรรมแล้วครับ"; loadingText.style.color = "#f44336";
-                    setTimeout(() => { loader.style.display = 'none'; checkSystemStatus(); }, 2500); return;
+            loader.style.display = 'flex'; 
+            spinner.style.display = 'block'; 
+            loadingText.style.color = "#00bcd4";
+            loadingText.innerText = "กำลังส่งข้อมูล...";
+
+            // 🌟 สร้าง submissionId หนึ่งครั้งต่อการกดส่ง และใช้ ID เดิมนี้ตลอดการ Retry ทุกรอบ (Idempotent Submission)
+            const submissionId = "sub_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+
+            const fullPayload = {
+                submissionId: submissionId,
+                image: finalCroppedImage,
+                fullImage: originalFullImage,
+                text: message
+            };
+
+            const statusPayload = {
+                action: "bubble_status",
+                submissionId: submissionId
+            };
+
+            console.log(`[Bubble Client] Starting submission. SubmissionId: ${submissionId}, Crop: ${finalCroppedImage.length} chars, Full: ${originalFullImage ? originalFullImage.length : 0} chars`);
+
+            let mode = "UPLOAD_FULL"; // โหมด: "UPLOAD_FULL" หรือ "STATUS_POLL"
+            let busyAttempts = 0;
+            let networkAttempts = 0;
+            let success = false;
+            let finalErrorMsg = "";
+            const startTime = Date.now();
+
+            function handleSuccess() {
+                success = true;
+                spinner.style.display = 'none';
+                loadingText.innerText = "✅ ส่งขึ้นจอเรียบร้อย!";
+                loadingText.style.color = "#4CAF50";
+
+                setTimeout(() => {
+                    loader.style.display = 'none';
+                    removeImage(new Event('click'));
+                    document.getElementById('messageInput').value = '';
+                    updateCharCount();
+                    sendBtn.disabled = false;
+                    sendBtn.style.opacity = '1';
+                    sendBtn.style.cursor = 'pointer';
+                }, 2000);
+            }
+
+            function handleClosed() {
+                spinner.style.display = 'none';
+                loadingText.innerText = "❌ หมดเวลาร่วมกิจกรรมแล้วครับ";
+                loadingText.style.color = "#f44336";
+                setTimeout(() => {
+                    loader.style.display = 'none';
+                    checkSystemStatus();
+                    sendBtn.disabled = false;
+                    sendBtn.style.opacity = '1';
+                    sendBtn.style.cursor = 'pointer';
+                }, 2500);
+            }
+
+            while (!success) {
+                // 1. ตรวจสอบเพดานเวลารวม (125 วินาที)
+                if (Date.now() - startTime > MAX_TOTAL_TIME_MS) {
+                    finalErrorMsg = "❌ การส่งใช้เวลานานเกินไป กรุณากดลองส่งอีกครั้ง";
+                    break;
                 }
 
-                document.querySelector('.spinner').style.display = 'none'; loadingText.innerText = "✅ ส่งขึ้นจอเรียบร้อย!"; loadingText.style.color = "#4CAF50";
-                
-                setTimeout(() => { 
-                    loader.style.display = 'none'; 
-                    removeImage(new Event('click')); 
-                    document.getElementById('messageInput').value = ''; 
-                    updateCharCount(); 
-                }, 2000);
-            } catch (error) {
-                document.querySelector('.spinner').style.display = 'none'; loadingText.innerText = "❌ เกิดข้อผิดพลาด กรุณาลองใหม่"; loadingText.style.color = "#f44336"; setTimeout(() => { loader.style.display = 'none'; }, 2000);
+                if (mode === "UPLOAD_FULL") {
+                    try {
+                        const res = await postWithTimeout(fullPayload, UPLOAD_TIMEOUT_MS);
+                        const result = await res.json();
+                        const duration = Date.now() - startTime;
+                        console.log(`[Bubble Client] Full upload response (${duration}ms):`, result);
+
+                        if (result && result.message === "CLOSED") {
+                            handleClosed();
+                            return;
+                        }
+
+                        if (result && result.message === "SUCCESS") {
+                            handleSuccess();
+                            return;
+                        }
+
+                        if (result && result.message === "PROCESSING") {
+                            // เซิร์ฟเวอร์รับงานเข้า In-Flight State เรียบร้อยแล้ว!
+                            // สลับไปโหมด STATUS_POLL ทันที — ไม่ส่งรูปภาพซ้ำอีกเด็ดขาด
+                            mode = "STATUS_POLL";
+                            loadingText.innerText = "กำลังบันทึกภาพขึ้นระบบ...";
+                            const waitMs = (result.retryAfterMs && typeof result.retryAfterMs === 'number') ? result.retryAfterMs : 2500;
+                            await new Promise(r => setTimeout(r, waitMs));
+                            continue;
+                        }
+
+                        if (result && result.message === "BUSY") {
+                            // Lock #1 ไม่ว่าง เซิร์ฟเวอร์ยังไม่ได้สร้าง Claim ต้องลองส่ง Full Payload ใหม่ด้วย Jittered Backoff
+                            busyAttempts++;
+                            if (busyAttempts > MAX_BUSY_RETRIES) {
+                                finalErrorMsg = "❌ ขณะนี้มีผู้ใช้งานจำนวนมาก กรุณารอสักครู่แล้วลองใหม่ครับ";
+                                break;
+                            }
+                            loadingText.innerText = `กำลังเข้าคิวส่งข้อมูล (รอคิวรอบที่ ${busyAttempts}/${MAX_BUSY_RETRIES})...`;
+                            const baseWait = (result.retryAfterMs && typeof result.retryAfterMs === 'number') ? result.retryAfterMs : 2000;
+                            const jitter = Math.floor(Math.random() * 1500);
+                            const backoff = baseWait + jitter + ((busyAttempts - 1) * 1000);
+                            await new Promise(r => setTimeout(r, backoff));
+                            continue;
+                        }
+
+                        if (result && result.message === "ERROR" && result.retryable) {
+                            networkAttempts++;
+                            if (networkAttempts > MAX_NETWORK_RETRIES) {
+                                finalErrorMsg = result.error ? `❌ ส่งไม่สำเร็จ: ${result.error}` : "❌ เกิดข้อผิดพลาดจากระบบ กรุณาลองใหม่";
+                                break;
+                            }
+                            loadingText.innerText = `กำลังลองส่งใหม่อีกครั้ง (${networkAttempts}/${MAX_NETWORK_RETRIES})...`;
+                            await new Promise(r => setTimeout(r, 2000));
+                            continue;
+                        }
+
+                        // ข้อผิดพลาดที่ไม่สามารถ Retry ได้ (เช่น ขนาดรูปเกิน)
+                        console.error("[Bubble Client] Non-retryable error from full upload:", result);
+                        finalErrorMsg = result && result.error ? `❌ ส่งไม่สำเร็จ: ${result.error}` : "❌ เกิดข้อผิดพลาดจากระบบ กรุณาลองใหม่";
+                        break;
+
+                    } catch (err) {
+                        console.warn(`[Bubble Client] Full upload network/timeout error:`, err);
+                        // หากเน็ตหลุดหรือ Timeout ตอนอัปโหลดรูป
+                        // เพื่อประหยัดแบนด์วิดท์ ให้ลองเช็ค bubble_status ก่อนเสมอ เพราะเซิร์ฟเวอร์อาจได้รับรูปไปแล้ว!
+                        mode = "STATUS_POLL";
+                        loadingText.innerText = "กำลังตรวจสอบสถานะการส่ง...";
+                        await new Promise(r => setTimeout(r, 1500));
+                        continue;
+                    }
+
+                } else if (mode === "STATUS_POLL") {
+                    // 🌟 โหมดเช็คสถานะน้ำหนักเบา (~50 bytes) ไม่ส่งรูปภาพซ้ำเด็ดขาด!
+                    try {
+                        const res = await postWithTimeout(statusPayload, STATUS_TIMEOUT_MS);
+                        const result = await res.json();
+                        const duration = Date.now() - startTime;
+                        console.log(`[Bubble Client] Status check response (${duration}ms):`, result);
+
+                        if (result && result.message === "SUCCESS") {
+                            handleSuccess();
+                            return;
+                        }
+
+                        if (result && result.message === "PROCESSING") {
+                            loadingText.innerText = "กำลังบันทึกภาพขึ้นระบบ...";
+                            const waitMs = (result.retryAfterMs && typeof result.retryAfterMs === 'number') ? result.retryAfterMs : 2500;
+                            await new Promise(r => setTimeout(r, waitMs));
+                            continue;
+                        }
+
+                        if (result && result.message === "RETRY_REQUIRED") {
+                            // Lease หมดอายุหรือเซิร์ฟเวอร์แจ้งว่าต้องการ Payload เต็มรูปแบบเพื่อกู้คืน
+                            // สลับกลับไปส่ง Full Payload โดยใช้ submissionId เดิม
+                            console.log("[Bubble Client] RETRY_REQUIRED received. Resending full payload with same ID.");
+                            mode = "UPLOAD_FULL";
+                            loadingText.innerText = "กำลังกู้คืนการส่งข้อมูล...";
+                            await new Promise(r => setTimeout(r, 1000));
+                            continue;
+                        }
+
+                        if (result && result.message === "CLOSED") {
+                            handleClosed();
+                            return;
+                        }
+
+                        // ตอบกลับอื่นๆ รอ 2.5 วินาทีแล้วเช็คสถานะใหม่
+                        await new Promise(r => setTimeout(r, 2500));
+
+                    } catch (statusErr) {
+                        console.warn(`[Bubble Client] Status check network error:`, statusErr);
+                        networkAttempts++;
+                        if (networkAttempts > MAX_NETWORK_RETRIES * 3) {
+                            finalErrorMsg = "❌ การเชื่อมต่อขัดข้อง กรุณาลองใหม่อีกครั้ง";
+                            break;
+                        }
+                        // รอ 2 วินาทีแล้วลองเช็คสถานะใหม่ (ยังคงไม่ส่งรูปภาพซ้ำ)
+                        await new Promise(r => setTimeout(r, 2000));
+                        continue;
+                    }
+                }
             }
+
+            // ถ้าหลุดลูปมาแสดงว่าส่งไม่สำเร็จ
+            spinner.style.display = 'none';
+            loadingText.innerText = finalErrorMsg || "❌ ส่งไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
+            loadingText.style.color = "#f44336";
+
+            setTimeout(() => {
+                loader.style.display = 'none';
+                sendBtn.disabled = false;
+                sendBtn.style.opacity = '1';
+                sendBtn.style.cursor = 'pointer';
+            }, 3000);
         }
     </script>
 </body>
