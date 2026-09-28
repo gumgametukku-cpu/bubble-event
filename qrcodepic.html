@@ -174,7 +174,7 @@
             const imageEl = document.getElementById('image-to-crop');
             console.log(`[Bubble PNG Trace] 3. Before drawing crop: imageEl.src prefix = ${imageEl.src.slice(0, 30)}`);
             
-            // 🌟 ปรับขนาดรูปวงกลมลงมาที่ 300x300 px
+            // 🌟 1. ดึงภาพตัดสี่เหลี่ยมจัตุรัสขนาด 300x300 px
             const canvas = cropper.getCroppedCanvas({
                 width: 300,
                 height: 300,
@@ -182,151 +182,164 @@
                 imageSmoothingQuality: 'high'
             });
             
-            // 🌟 ตรวจสอบว่ารูปมี Alpha Channel (ความโปร่งใส) หรือไม่
+            // 🌟 2. ตรวจสอบความโปร่งใส (Alpha Channel)
             let hasAlpha = false;
             let alphaCount = 0;
             try {
                 const ctx = canvas.getContext('2d');
                 const imgData = ctx.getImageData(0, 0, 300, 300).data;
                 for (let i = 3; i < imgData.length; i += 4) {
-                    if (imgData[i] < 255) {
-                        alphaCount++;
-                    }
-                    if (imgData[i] < 250) {
-                        hasAlpha = true;
-                    }
+                    if (imgData[i] < 255) alphaCount++;
+                    if (imgData[i] < 250) hasAlpha = true;
                 }
-                console.log(`[Bubble PNG Trace] 4. Crop canvas BEFORE background fill: totalPixels = 90000, alphaLessThan255 = ${alphaCount}, hasAlpha (<250) = ${hasAlpha}`);
+                console.log(`[Bubble PNG Trace] 4. Crop canvas alpha: totalPixels = 90000, alpha<255 = ${alphaCount}, hasAlpha = ${hasAlpha}`);
             } catch (e) {
                 console.warn("[Bubble Client] Alpha detection warning:", e);
             }
 
-            // แคช canvas สำหรับขนาดต่างๆ เพื่อประสิทธิภาพสูงสุดและคงความโปร่งใส
+            // 🌟 3. ฟังก์ชันย่อขนาด canvas โดยตรงจากภาพ 300x300 (เสถียร 100% บน Mobile Safari)
             const canvasCache = { 300: canvas };
-            function getCropCanvas(dim) {
+            function getScaledCrop(dim) {
                 if (canvasCache[dim]) return canvasCache[dim];
-                let c = null;
-                try {
-                    c = cropper.getCroppedCanvas({
-                        width: dim,
-                        height: dim,
-                        imageSmoothingEnabled: true,
-                        imageSmoothingQuality: 'high'
-                    });
-                } catch (e) {
-                    console.warn(`[Bubble Client] cropper.getCroppedCanvas(${dim}) error:`, e);
-                }
-                if (!c) {
-                    c = document.createElement('canvas');
-                    c.width = dim;
-                    c.height = dim;
-                    const ctx = c.getContext('2d');
-                    ctx.imageSmoothingEnabled = true;
-                    ctx.imageSmoothingQuality = 'high';
-                    ctx.drawImage(canvas, 0, 0, dim, dim);
-                }
+                const c = document.createElement('canvas');
+                c.width = dim;
+                c.height = dim;
+                const ctx = c.getContext('2d');
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(canvas, 0, 0, dim, dim);
                 canvasCache[dim] = c;
                 return c;
             }
 
+            let selectedDataUrl = "";
+            let selectedMime = "";
+            let selectedDim = "";
+            let selectedStep = "";
+
             if (hasAlpha) {
-                // 🌟 กรณีเป็น PNG โปร่งใส / สติกเกอร์ / โลโก้:
-                // คงความโปร่งใสไว้ ไม่ปูพื้นสีขาวเด็ดขาด!
-                
-                // ตรวจสอบว่าเบราว์เซอร์รองรับการ Encode WebP หรือไม่
-                const testWebp = canvas.toDataURL('image/webp', 0.80);
-                const isWebpSupported = testWebp.startsWith('data:image/webp');
-                
+                // ==========================================
+                // 🌟 เส้นทางภาพโปร่งใส (PNG / WebP with Alpha)
+                // ==========================================
+                // กฎเหล็ก: ห้ามปูพื้นขาว คงความโปร่งใส 100%
+
+                // 3.1 ตรวจสอบว่าเบราว์เซอร์รองรับการ Encode WebP จริงหรือไม่
+                let isWebpSupported = false;
+                try {
+                    const testWebp = canvas.toDataURL('image/webp', 0.80);
+                    if (testWebp && testWebp.indexOf('data:image/webp') === 0) {
+                        isWebpSupported = true;
+                    }
+                } catch (e) {
+                    isWebpSupported = false;
+                }
+
+                // 3.2 ถ้า WebP รองรับ ให้ลองบันได WebP ก่อน
                 if (isWebpSupported) {
-                    // แผนการบีบอัดแบบต่อเนื่องสำหรับ WebP (Adaptive Progressive Compression):
-                    // 1. 300x300 q=0.80 -> q=0.70 -> q=0.60
-                    // 2. 270x270 q=0.70 -> q=0.60
-                    // 3. 240x240 q=0.70 -> q=0.60
-                    // 4. 220x220 q=0.65 -> q=0.60
-                    // 5. 200x200 q=0.60
                     const webpSteps = [
-                        { dim: 300, quality: 0.80 },
-                        { dim: 300, quality: 0.70 },
-                        { dim: 300, quality: 0.60 },
-                        { dim: 270, quality: 0.70 },
-                        { dim: 270, quality: 0.60 },
-                        { dim: 240, quality: 0.70 },
-                        { dim: 240, quality: 0.60 },
-                        { dim: 220, quality: 0.65 },
-                        { dim: 220, quality: 0.60 },
-                        { dim: 200, quality: 0.60 }
+                        { dim: 300, q: 0.80 },
+                        { dim: 300, q: 0.70 },
+                        { dim: 300, q: 0.60 },
+                        { dim: 270, q: 0.70 },
+                        { dim: 270, q: 0.60 },
+                        { dim: 240, q: 0.70 },
+                        { dim: 240, q: 0.60 },
+                        { dim: 220, q: 0.65 },
+                        { dim: 220, q: 0.60 },
+                        { dim: 200, q: 0.60 },
+                        { dim: 180, q: 0.60 },
+                        { dim: 160, q: 0.60 },
+                        { dim: 140, q: 0.60 },
+                        { dim: 120, q: 0.60 }
                     ];
 
-                    let selectedDataUrl = "";
                     for (const step of webpSteps) {
-                        const targetCanvas = getCropCanvas(step.dim);
-                        const dataUrl = targetCanvas.toDataURL('image/webp', step.quality);
-                        console.log(`[Bubble Adaptive WebP] ${step.dim}x${step.dim} image/webp q=${step.quality} → ${dataUrl.length} chars`);
-                        if (dataUrl.length < 45000) {
-                            selectedDataUrl = dataUrl;
-                            console.log(`[Bubble Adaptive WebP] ACCEPTED at ${step.dim}x${step.dim} q=${step.quality} (${dataUrl.length} chars < 45000)`);
-                            break;
+                        const targetCanvas = getScaledCrop(step.dim);
+                        const dataUrl = targetCanvas.toDataURL('image/webp', step.q);
+                        if (dataUrl && dataUrl.indexOf('data:image/webp') === 0) {
+                            console.log(`[Bubble Crop Attempt] ${step.dim}x${step.dim} image/webp q=${step.q} length=${dataUrl.length}`);
+                            if (dataUrl.length < 45000) {
+                                selectedDataUrl = dataUrl;
+                                selectedMime = 'image/webp';
+                                selectedDim = `${step.dim}x${step.dim}`;
+                                selectedStep = `${step.dim}x${step.dim} WebP q=${step.q}`;
+                                break;
+                            }
                         }
                     }
+                }
 
-                    if (!selectedDataUrl) {
-                        const lastStep = webpSteps[webpSteps.length - 1];
-                        selectedDataUrl = getCropCanvas(lastStep.dim).toDataURL('image/webp', lastStep.quality);
-                    }
-
-                    finalCroppedImage = selectedDataUrl;
-                    console.log(`[Bubble PNG Trace] 5. Final Bubble Data URL (WebP): prefix = ${finalCroppedImage.slice(0, 30)}, length = ${finalCroppedImage.length} chars`);
-                } else {
-                    // แผนการย่อขนาดแบบต่อเนื่องสำหรับเบราว์เซอร์ที่ไม่รองรับ WebP (PNG Fallback)
-                    // 300x300 -> 270x270 -> 240x240 -> 220x220 -> 200x200 -> 180x180 -> 160x160 -> 140x140 -> 120x120
-                    const pngDims = [300, 270, 240, 220, 200, 180, 160, 140, 120];
-                    let selectedDataUrl = "";
+                // 3.3 ถ้า WebP ไม่รองรับ หรือ WebP ทุกขั้นยังคง >= 45,000 ตัวอักษร:
+                // สลับเข้าสู่บันได PNG fallback ทันที และย่อขนาดลงไปเรื่อยๆ จนกว่าจะ < 45,000!
+                if (!selectedDataUrl) {
+                    const pngDims = [300, 270, 240, 220, 200, 180, 160, 140, 120, 110, 100, 90, 80];
                     for (const dim of pngDims) {
-                        const targetCanvas = getCropCanvas(dim);
+                        const targetCanvas = getScaledCrop(dim);
                         const dataUrl = targetCanvas.toDataURL('image/png');
-                        console.log(`[Bubble Adaptive PNG] ${dim}x${dim} image/png → ${dataUrl.length} chars`);
+                        console.log(`[Bubble Crop Attempt] ${dim}x${dim} image/png length=${dataUrl.length}`);
                         if (dataUrl.length < 45000) {
                             selectedDataUrl = dataUrl;
-                            console.log(`[Bubble Adaptive PNG] ACCEPTED at ${dim}x${dim} (${dataUrl.length} chars < 45000)`);
+                            selectedMime = 'image/png';
+                            selectedDim = `${dim}x${dim}`;
+                            selectedStep = `${dim}x${dim} PNG`;
                             break;
                         }
                     }
-
-                    if (!selectedDataUrl) {
-                        const lastDim = pngDims[pngDims.length - 1];
-                        selectedDataUrl = getCropCanvas(lastDim).toDataURL('image/png');
-                    }
-
-                    finalCroppedImage = selectedDataUrl;
-                    console.log(`[Bubble PNG Trace] 5. Final Bubble Data URL (PNG fallback): prefix = ${finalCroppedImage.slice(0, 30)}, length = ${finalCroppedImage.length} chars`);
                 }
 
-                // หากผ่านการบีบอัดทุกขั้นแล้วยังคงเกินเพดานความปลอดภัย 49,000 ตัวอักษร ให้แจ้งเตือนผู้ใช้
-                if (finalCroppedImage.length > 49000) {
-                    alert("❌ ขนาดภาพตัดวงกลมใหญ่เกินกำหนด (เกิน 49,000 ตัวอักษร) กรุณาเลือกรูปอื่นหรือครอบส่วนที่เล็กลงครับ");
-                    cancelCrop();
-                    return;
-                }
             } else {
-                // 🌟 รูปถ่ายทั่วไป (JPEG / Camera Photos): คงพฤติกรรมเดิมไว้ ไม่ลดทอนโดยไม่จำเป็น
-                const exportCanvas = document.createElement('canvas');
-                exportCanvas.width = 300;
-                exportCanvas.height = 300;
-                const ctx = exportCanvas.getContext('2d');
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(0, 0, 300, 300);
-                ctx.drawImage(canvas, 0, 0, 300, 300);
-                
-                let quality = 0.80;
-                finalCroppedImage = exportCanvas.toDataURL('image/jpeg', quality);
-                if (finalCroppedImage.length > 45000) {
-                    finalCroppedImage = exportCanvas.toDataURL('image/jpeg', 0.65);
+                // ==========================================
+                // 🌟 เส้นทางภาพถ่ายทั่วไป (JPEG / Camera Photos)
+                // ==========================================
+                // ปูพื้นสีขาว และเริ่มที่คุณภาพสูงตามปกติ หากเกิน 45,000 ให้ปรับคุณภาพ/ย่อขนาดลงอัตโนมัติ
+                const jpegSteps = [
+                    { dim: 300, q: 0.80 },
+                    { dim: 300, q: 0.65 },
+                    { dim: 300, q: 0.55 },
+                    { dim: 270, q: 0.65 },
+                    { dim: 240, q: 0.65 },
+                    { dim: 200, q: 0.65 },
+                    { dim: 160, q: 0.65 }
+                ];
+
+                for (const step of jpegSteps) {
+                    const exportCanvas = document.createElement('canvas');
+                    exportCanvas.width = step.dim;
+                    exportCanvas.height = step.dim;
+                    const ctx = exportCanvas.getContext('2d');
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, step.dim, step.dim);
+                    ctx.drawImage(canvas, 0, 0, step.dim, step.dim);
+
+                    const dataUrl = exportCanvas.toDataURL('image/jpeg', step.q);
+                    console.log(`[Bubble Crop Attempt] ${step.dim}x${step.dim} image/jpeg q=${step.q} length=${dataUrl.length}`);
+                    if (dataUrl.length < 45000) {
+                        selectedDataUrl = dataUrl;
+                        selectedMime = 'image/jpeg';
+                        selectedDim = `${step.dim}x${step.dim}`;
+                        selectedStep = `${step.dim}x${step.dim} JPEG q=${step.q}`;
+                        break;
+                    }
                 }
-                if (finalCroppedImage.length > 45000) {
-                    finalCroppedImage = exportCanvas.toDataURL('image/jpeg', 0.55);
-                }
-                console.log(`[Bubble PNG Trace] 5. Final Bubble Data URL (JPEG): prefix = ${finalCroppedImage.slice(0, 30)}, length = ${finalCroppedImage.length} chars`);
             }
+
+            // 🌟 4. ตรวจสอบเงื่อนไขความปลอดภัยอย่างเคร่งครัด
+            // หากระบบผ่านการบีบอัดทุกขั้นแล้วยังไม่ต่ำกว่า 45,000 ห้ามปล่อย finalCroppedImage หลุดออกไปเด็ดขาด
+            if (!selectedDataUrl || selectedDataUrl.length >= 45000) {
+                console.error("[Bubble Crop Final] EMERGENCY OVERSIZED:", {
+                    mime: selectedMime,
+                    dimensions: selectedDim,
+                    length: selectedDataUrl ? selectedDataUrl.length : 0
+                });
+                alert(`❌ ขนาดรูปภาพยังคงเกินกำหนด (${selectedDataUrl ? selectedDataUrl.length : 0} ตัวอักษร) กรุณาลองใหม่อีกครั้ง`);
+                cancelCrop();
+                return;
+            }
+
+            finalCroppedImage = selectedDataUrl;
+
+            // 🌟 5. แสดงผล Diagnostic ใน Console ตามรูปแบบที่กำหนด
+            console.log(`[Bubble Crop Final]\nmime=${selectedMime}\ndimensions=${selectedDim}\nlength=${finalCroppedImage.length}\nstep=${selectedStep}`);
             
             document.getElementById('crop-overlay').style.display = 'none';
             document.getElementById('imagePreview').src = finalCroppedImage;
@@ -435,8 +448,8 @@
             const message = document.getElementById('messageInput').value.trim();
             if (finalCroppedImage === "" && message === "") return alert("กรุณาเลือกรูปภาพหรือพิมพ์ข้อความอย่างน้อย 1 อย่างครับ");
             
-            if (finalCroppedImage && finalCroppedImage.length > 49000) {
-                return alert("❌ ขนาดภาพตัดวงกลมใหญ่เกินกำหนด (เกิน 49,000 ตัวอักษร) กรุณากดเลือกหรือครอบรูปใหม่อีกครั้งครับ");
+            if (finalCroppedImage && finalCroppedImage.length >= 45000) {
+                return alert("❌ ขนาดภาพตัดวงกลมใหญ่เกินกำหนด (เกิน 45,000 ตัวอักษร) กรุณากดเลือกหรือครอบรูปใหม่อีกครั้งครับ");
             }
             
             const sendBtn = document.getElementById('sendBtn');
